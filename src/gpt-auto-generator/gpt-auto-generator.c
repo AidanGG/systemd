@@ -57,6 +57,7 @@ static char *arg_usr_fstype = NULL;
 static char *arg_usr_options = NULL;
 static ImagePolicy *arg_image_policy = NULL;
 static ImageFilter *arg_image_filter = NULL;
+static char *arg_fixate_volume_key = NULL;
 
 STATIC_DESTRUCTOR_REGISTER(arg_root_fstype, freep);
 STATIC_DESTRUCTOR_REGISTER(arg_root_options, freep);
@@ -64,6 +65,7 @@ STATIC_DESTRUCTOR_REGISTER(arg_usr_fstype, freep);
 STATIC_DESTRUCTOR_REGISTER(arg_usr_options, freep);
 STATIC_DESTRUCTOR_REGISTER(arg_image_policy, image_policy_freep);
 STATIC_DESTRUCTOR_REGISTER(arg_image_filter, image_filter_freep);
+STATIC_DESTRUCTOR_REGISTER(arg_fixate_volume_key, freep);
 
 #define LOADER_PARTITION_IDLE_USEC (120 * USEC_PER_SEC)
 
@@ -129,10 +131,14 @@ static int add_cryptsetup(
                  * UKI), and sd-stub measured the UKI. We do this in order not to step into people's own PCR
                  * assignment, under the assumption that people who are fine to use sd-stub with its PCR
                  * assignments are also OK with our PCR 15 use here. */
-                if (r > 0)
-                        if (!strextend_with_separator(&options, ",", "tpm2-measure-pcr=yes,tpm2-measure-keyslot-nvpcr=yes"))
+                if (r > 0) {
+                        if (!strextend_with_separator(&options, ",", "tpm2-measure-pcr=yes,tpm2-measure-keyslot-nvpcr=yes,testarg"))
                                 return log_oom();
-                if (r == 0)
+
+                        if (arg_fixate_volume_key)
+                                if (!strextendf_with_separator(&options, ",", "fixate-volume-key=%s", arg_fixate_volume_key))
+                                        return log_oom();
+                } else if (r == 0)
                         log_debug("Will not measure volume key of volume '%s', as OS measurements are not explicitly requested and not booted via systemd-stub with measurements enabled.", id);
         }
 
@@ -1351,6 +1357,13 @@ static int parse_proc_cmdline_item(const char *key, const char *value, void *dat
 
                 if (!arg_swap_enabled)
                         log_debug("Disabling swap partitions auto-detection, systemd.swap=no is defined.");
+
+        } else if (streq(key, "fixate_volume_key")) {
+
+                if (proc_cmdline_value_missing(key, value))
+                        return 0;
+
+                return free_and_strdup_warn(&arg_fixate_volume_key, value);
 
         }
 
